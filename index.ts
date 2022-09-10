@@ -88,11 +88,13 @@ wss.on('connection', function connection(ws: WebSocket) {
             }
             else if (mes.command == "FETCH")
             {
-                let locations = {};
-                for (const user of users[mes.uuid].friends)
-                {
-                    locations[user.uuid] = user.location;
-                }
+		let locations: {[uuid: string]: number[]} = {};
+                for (const uuid of users[mes.uuid].friends)
+		{
+            const user = searchUser(uuid);
+            if (user === undefined) { continue; }
+            locations[String(uuid)] = user?.location;
+		}
                 ws.send(cData("FETCH", locations));
             }
             else
