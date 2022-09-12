@@ -1,6 +1,6 @@
 import { getRandom } from "./random"
 
-export function register(users: string[]) {
+export function register(users: string[], password: string) {
     let uuid = null;
     while (uuid == null) {
         const uuid_tmp = getRandom(1000, 9999);
@@ -9,5 +9,5 @@ export function register(users: string[]) {
             break;
         }
     }
-    return [uuid, {[uuid]: {friend: [], location: {}}}]
+    return [ uuid, {[uuid]: {friend: [], location: {}, password: password}} ]
 }

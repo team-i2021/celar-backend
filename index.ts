@@ -6,7 +6,12 @@ import { register } from "./account";
 
 config();
 
-console.log('Celar Backend Service')
+const VERSION = "v0.9.1";
+
+console.log('Celar Backend Service');
+console.log(`Version ${VERSION}`);
+
+console.log("Application initialization starting...");
 
 const WebSocketPort = Number(process.env.WSPORT);
 const HTTPPort = Number(process.env.HTTPPORT);
@@ -15,10 +20,13 @@ const app = express();
 
 const wss = new WebSocketServer({ port: WebSocketPort });
 
+console.log("Application initialization complete.");
+
 export interface User {
     uuid: number;
     friends: number[];
     location: number[];
+    password: string;
 }
 
 let users: User[] = []
@@ -64,7 +72,7 @@ wss.on('connection', function connection(ws: WebSocket) {
             }
             else if (mes.command == "REGISTER")
             {
-                const regi_data = register(Object.keys(users));
+                const regi_data = register(Object.keys(users), mes.password);
                 Object.assign(users, regi_data[1]);
                 ws.send(cData("REGISTER", regi_data[0]));
             }
@@ -117,6 +125,6 @@ app.get('/', function (req, res) {
     res.status(200).send(`Celar Backend Service.<br>HTTP: ${HTTPPort}<br>WebSocket: ${WebSocketPort}`);
 });
 
-console.log('Server Staring...');
+console.log('Server starting...');
 console.log('HTTP: %d\nWebSocket: %d', HTTPPort, WebSocketPort);
 app.listen(HTTPPort);
