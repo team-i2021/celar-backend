@@ -74,7 +74,7 @@ wss.on('connection', function connection(ws: WebSocket) {
             {
                 const regi_data = register(Object.keys(users), mes.password);
                 Object.assign(users, regi_data[1]);
-                ws.send(cData("REGISTER", regi_data[0]));
+                ws.send(cData("REGISTER", {uuid: regi_data[0], password: mes.password}));
             }
             else if (mes.command == "FRIEND")
             {
