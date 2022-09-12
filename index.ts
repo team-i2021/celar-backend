@@ -29,7 +29,16 @@ export interface User {
     password: string;
 }
 
-let users: User[] = []
+export interface SocketData {
+    command: string;
+    uuid: number;
+    user_id: number;
+    location: number[];
+    password: string;
+    action: string;
+}
+
+const users: User[] = []
 
 const cData = (action: string, content: any): string => {
     return JSON.stringify({ action: action, content: content });
@@ -52,11 +61,12 @@ wss.on('connection', function connection(ws: WebSocket) {
         const message_content = message.toString()
         try
         {
-            const mes = JSON.parse(message_content)
+            const mes: SocketData = JSON.parse(message_content)
+            console.info(mes);
             if (mes.command == "GET")
             {
-                const user = searchUser(mes.user_id);
-                if ((user === undefined) || (!hasFriend(mes.uuid, user.uuid)))
+                const user = users[mes.user_id];
+                if ((user === undefined) || (!hasFriend(mes.uuid, user?.uuid)))
                 {
                     ws.send(cData("ERR", "User not found."));
                 }
@@ -96,14 +106,19 @@ wss.on('connection', function connection(ws: WebSocket) {
             }
             else if (mes.command == "FETCH")
             {
-		let locations: {[uuid: string]: number[]} = {};
+                let locations: {[uuid: string]: number[]} = {};
                 for (const uuid of users[mes.uuid].friends)
-		{
-            const user = searchUser(uuid);
-            if (user === undefined) { continue; }
-            locations[String(uuid)] = user?.location;
-		}
+                {
+                    const user = searchUser(uuid);
+                    if (user === undefined) { continue; }
+                    locations[String(uuid)] = user.location;
+                }
                 ws.send(cData("FETCH", locations));
+            }
+            else if (mes.command == "CHECK")
+            {
+                console.info(users);
+                ws.send(cData("OK", "CHECK"));
             }
             else
             {

@@ -9,5 +9,5 @@ export function register(users: string[], password: string) {
             break;
         }
     }
-    return [ uuid, {[uuid]: {friend: [], location: {}, password: password}} ]
+    return [ uuid, {[uuid]: {uuid: uuid, friend: [], location: {}, password: password}} ]
 }
