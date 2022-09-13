@@ -1,12 +1,14 @@
 import express from 'express';
 import WebSocket, { WebSocketServer } from 'ws';
 import { config } from 'dotenv';
+import fs, { promises as fsp } from 'fs';
 
 import { register } from "./account";
 
 config();
 
 const VERSION = "v0.9.1";
+const FILE_NAME = "data.db"; // DBを使うまでの...
 
 console.log('Celar Backend Service');
 console.log(`Version ${VERSION}`);
@@ -24,8 +26,9 @@ console.log("Application initialization complete.");
 
 export interface User {
     uuid: number;
-    friends: number[];
-    location: number[];
+    icon: string;
+    friend: number[]; // friend uuids list
+    location: number[]; // [latitude, longitude, speed(m/s), time]
     password: string;
 }
 
@@ -38,7 +41,7 @@ export interface SocketData {
     action: string;
 }
 
-const users: User[] = []
+let users: User[] = []
 
 const cData = (action: string, content: any): string => {
     return JSON.stringify({ action: action, content: content });
@@ -50,10 +53,25 @@ const searchUser = (uuid: number): User | undefined => {
 }
 
 const hasFriend = (source: number, target: number): boolean => {
-    const user = searchUser(source);
+    const user = users[source]
     if (user === undefined) { return false; }
-    const result = user.friends.find(item => item === target);
+    const result = user.friend.find(item => item === target);
     return (result !== undefined);
+}
+
+const dataread = () => {
+    if (fs.existsSync(FILE_NAME))
+    {
+        users = JSON.parse(fs.readFileSync(FILE_NAME, "utf-8"))
+    }
+    else
+    {
+        datawrite();
+    }
+}
+
+const datawrite = async () => {
+    await fsp.writeFile(FILE_NAME, JSON.stringify(users));
 }
 
 wss.on('connection', function connection(ws: WebSocket) {
@@ -78,46 +96,64 @@ wss.on('connection', function connection(ws: WebSocket) {
             else if (mes.command == "POST")
             {
                 users[mes.uuid].location = mes.location
+                datawrite();
                 ws.send(cData("OK", "POST"));
             }
             else if (mes.command == "REGISTER")
             {
                 const regi_data = register(Object.keys(users), mes.password);
                 Object.assign(users, regi_data[1]);
+                datawrite();
                 ws.send(cData("REGISTER", {uuid: regi_data[0], password: mes.password}));
             }
             else if (mes.command == "FRIEND")
             {
                 if (mes.action == "ADD")
                 {
-                    users[mes.uuid].friends.push(mes.user_id);
+                    users[mes.uuid].friend.push(mes.user_id);
+                    datawrite();
                     ws.send(cData("OK", "FRIEND_ADD"));
                 }
                 else if (mes.action == "DEL")
                 {
-                    const friends = users[mes.uuid].friends.filter(item => item !== mes.user_id);
-                    users[mes.uuid].friends = friends;
+                    const friend = users[mes.uuid].friend.filter(item => item !== mes.user_id);
+                    users[mes.uuid].friend = friend;
+                    datawrite();
                     ws.send(cData("OK", "FRIEND_DEL"));
+                }
+                else if (mes.action == "GET")
+                {
+                    ws.send(cData("FRIENDS", users[mes.uuid].friend));
                 }
                 else
                 {
-                    ws.send("ERR: Argument missing of not found.");
+                    ws.send(cData("ERR", "Unknown command argument."));
                 }
             }
             else if (mes.command == "FETCH")
             {
                 let locations: {[uuid: string]: number[]} = {};
-                for (const uuid of users[mes.uuid].friends)
+                for (const uuid of users[mes.uuid].friend)
                 {
-                    const user = searchUser(uuid);
+                    const user = users[uuid];
                     if (user === undefined) { continue; }
                     locations[String(uuid)] = user.location;
                 }
                 ws.send(cData("FETCH", locations));
             }
+            else if (mes.command == "INIT")
+            {
+                const user = users[mes.uuid];
+                const friend_data: {icon: string, uuid: number, location: number[]}[] = [{icon: user.icon, uuid: user.uuid, location: user.location}];
+                for (const u of user.friend)
+                {
+                    friend_data.push({icon: users[u].icon, uuid: u, location: users[u].location});
+                }
+                ws.send(cData("INIT", {user: user, friends: friend_data}));
+            }
             else if (mes.command == "CHECK")
             {
-                console.info(users);
+                console.info(users.filter(item => item !== null));
                 ws.send(cData("OK", "CHECK"));
             }
             else
@@ -128,7 +164,7 @@ wss.on('connection', function connection(ws: WebSocket) {
         }
         catch (e)
         {
-            ws.send(cData("RECEIVE_TXT", message));
+            ws.send(cData("RECEIVE_TXT", {content: message, event: e}));
             console.log(e);
         }
     });
@@ -136,9 +172,14 @@ wss.on('connection', function connection(ws: WebSocket) {
 });
 
 app.get('/', function (req, res) {
-    res.set("Content-Type", "text/html");
-    res.status(200).send(`Celar Backend Service.<br>HTTP: ${HTTPPort}<br>WebSocket: ${WebSocketPort}`);
+    res.set("Content-Type", "json/application");
+    res.status(200).send({http_port: HTTPPort, ws_port: WebSocketPort});
 });
+
+console.log("Reading database...");
+dataread();
+console.info(users.filter(item => item !== null));
+console.log("Finished reading database.");
 
 console.log('Server starting...');
 console.log('HTTP: %d\nWebSocket: %d', HTTPPort, WebSocketPort);
