@@ -17,4 +17,4 @@ key|value
 HTTPPORT|HTTPAPIサーバーのポート
 WSPORT|WebSocketサーバーのポート
 FRONTEND_PATH|フロントエンドのファイル場所
-
+FRONTEND_URL|フロントエンドのURL（CORS用）

@@ -4,11 +4,13 @@ import { config } from 'dotenv';
 import fs, { promises as fsp } from 'fs';
 import multer from "multer";
 import path from "path";
+import cors from "cors";
 
 import { register } from "./account";
 import { generateUuid } from "./random";
 
 config();
+
 
 const FILE_NAME = "data.db"; // DBを使うまでの...
 
@@ -20,8 +22,9 @@ const WebSocketPort = Number(process.env.WSPORT);
 const HTTPPort = Number(process.env.HTTPPORT);
 
 const app = express();
-
 const wss = new WebSocketServer({ port: WebSocketPort });
+
+app.use(cors({ origin: true }));
 
 // const icon_storage = multer.diskStorage({
 //     destination(req, file, callback) {
@@ -201,25 +204,34 @@ app.get('/', function (req, res) {
 });
 
 app.get('/upload_icon', (req, res) => {
-    res.sendFile(path.join(__dirname, "res/upload.html"));
+    res.sendFile(path.join(__dirname, "res/upload_icon.html"));
 });
 
-app.post('/upload_icon', multer().single('file'), async (req, res) => {
+const upload = multer()
+app.post('/upload_icon', upload.single('iconfile'), (req, res) => {
     res.header("Content-Type", "application/json;charset=utf-8");
-    const file = req.file;
-    const uuid = req.body.uuid;
-    if (file === undefined)
-    {
-        res.status(400).send(JSON.stringify({"Status":"Failed", "Exception": "File not found."}));
+    if (req.file === undefined) {
+        res.status(400).send(JSON.stringify({status: "Failed", exception: "File not found"}));
+        return;
     }
-    else
+    else if (req.body.uuid === undefined || users[req.body.uuid] === null)
     {
-        const filename = `/image/${Date.now()}-${generateUuid()}-${file?.originalname}`;
-        await fsp.writeFile(path.resolve(String(process.env.FRONTEND_PATH), filename), file?.buffer);
-        users[uuid].icon = filename;
-        res.status(200).send(JSON.stringify({"Status":"Success","FileName": filename}));
+        res.status(400).send(JSON.stringify({status: "Failed", exception: "UUID not found"}));
+        return
     }
-});
+    const filename = `/image/${Date.now()}-${generateUuid()}-${req.file.originalname}`;
+    fsp.writeFile(path.join(String(process.env.FRONTEND_PATH), filename), req.file.buffer);
+    if (users[req.body.uuid].icon !== "/image/default.png")
+    {
+        if (fs.existsSync(path.join(String(process.env.FRONTEND_PATH), users[req.body.uuid].icon)))
+        {
+            fsp.unlink(path.join(String(process.env.FRONTEND_PATH), users[req.body.uuid].icon));
+        }
+    }
+    users[req.body.uuid].icon = filename;
+    res.status(200).send(JSON.stringify({"Status":"Success","FileName": filename}));
+})
+
 
 console.log("Reading database...");
 dataread();
