@@ -2,16 +2,17 @@ import express from 'express';
 import WebSocket, { WebSocketServer } from 'ws';
 import { config } from 'dotenv';
 import fs, { promises as fsp } from 'fs';
+import multer from "multer";
+import path from "path";
 
 import { register } from "./account";
+import { generateUuid } from "./random";
 
 config();
 
-const VERSION = "v0.9.1";
 const FILE_NAME = "data.db"; // DBを使うまでの...
 
-console.log('Celar Backend Service');
-console.log(`Version ${VERSION}`);
+console.log('Celar Backend Service')
 
 console.log("Application initialization starting...");
 
@@ -21,6 +22,29 @@ const HTTPPort = Number(process.env.HTTPPORT);
 const app = express();
 
 const wss = new WebSocketServer({ port: WebSocketPort });
+
+// const icon_storage = multer.diskStorage({
+//     destination(req, file, callback) {
+//         callback(null, path.resolve(__dirname, String(process.env.FRONTEND_PATH)));
+//     },
+//     filename(req, file, callback) {
+//         callback(null, `${Date.now()}-${generateUuid()}-${file.originalname}`);
+//     },
+// });
+//
+// const upload = multer({
+//     icon_storage,
+//     fileFilter(req, file, callback) {
+//         console.log(file.mimetype)
+//         if (["image/png", "image/jpeg"].includes(file.mimetype)) {
+//             callback(null, true);
+//             return;
+//         }
+//         callback(new TypeError("Invalid File Type"));
+//     },
+// });
+
+// const upload = multer({ storage: multer.diskStorage() })
 
 console.log("Application initialization complete.");
 
@@ -110,7 +134,7 @@ wss.on('connection', function connection(ws: WebSocket) {
             {
                 if (mes.action == "ADD")
                 {
-                    users[mes.uuid].friend.push(mes.user_id);
+                    users[mes.uuid].friend.push(Number(mes.user_id));
                     datawrite();
                     ws.send(cData("OK", "FRIEND_ADD"));
                 }
@@ -119,7 +143,7 @@ wss.on('connection', function connection(ws: WebSocket) {
                     const friend = users[mes.uuid].friend.filter(item => item !== mes.user_id);
                     users[mes.uuid].friend = friend;
                     datawrite();
-                    ws.send(cData("OK", "FRIEND_DEL"));
+                    ws.send(cData("OK", "DEL_FRIEND"));
                 }
                 else if (mes.action == "GET")
                 {
@@ -172,8 +196,29 @@ wss.on('connection', function connection(ws: WebSocket) {
 });
 
 app.get('/', function (req, res) {
-    res.set("Content-Type", "json/application");
-    res.status(200).send({http_port: HTTPPort, ws_port: WebSocketPort});
+    res.header("Content-Type", "application/json;charset=utf-8");
+    res.status(200).send(JSON.stringify({http_port: HTTPPort, ws_port: WebSocketPort}));
+});
+
+app.get('/upload_icon', (req, res) => {
+    res.sendFile(path.join(__dirname, "res/upload.html"));
+});
+
+app.post('/upload_icon', multer().single('file'), async (req, res) => {
+    res.header("Content-Type", "application/json;charset=utf-8");
+    const file = req.file;
+    const uuid = req.body.uuid;
+    if (file === undefined)
+    {
+        res.status(400).send(JSON.stringify({"Status":"Failed", "Exception": "File not found."}));
+    }
+    else
+    {
+        const filename = `/image/${Date.now()}-${generateUuid()}-${file?.originalname}`;
+        await fsp.writeFile(path.resolve(String(process.env.FRONTEND_PATH), filename), file?.buffer);
+        users[uuid].icon = filename;
+        res.status(200).send(JSON.stringify({"Status":"Success","FileName": filename}));
+    }
 });
 
 console.log("Reading database...");

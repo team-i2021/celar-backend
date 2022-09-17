@@ -1,6 +1,6 @@
 {
   "name": "celar-backend",
-  "version": "1.0.0",
+  "version": "0.9.1",
   "description": "",
   "main": "index.mjs",
   "scripts": {
@@ -18,9 +18,11 @@
   },
   "homepage": "https://github.com/celar-team/celar-backend#readme",
   "dependencies": {
+    "@types/multer": "^1.4.7",
     "@types/node": "^18.7.16",
     "dotenv": "^16.0.2",
     "express": "^4.18.1",
+    "multer": "^1.4.5-lts.1",
     "ts-node": "^10.9.1",
     "typescript": "^4.8.2",
     "ws": "^8.8.1"

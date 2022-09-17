@@ -7,5 +7,14 @@ Celarのbackend
 3. `node index.js`でサーバーを起動します。  
 
 # Requirements
-Node.js  
-Express/ws
+Node.js
+
+# Enviroment
+`.env`ファイルに書き込む内容の詳細です。
+
+key|value
+---|---
+HTTPPORT|HTTPAPIサーバーのポート
+WSPORT|WebSocketサーバーのポート
+FRONTEND_PATH|フロントエンドのファイル場所
+
