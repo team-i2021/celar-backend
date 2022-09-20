@@ -1,11 +1,11 @@
 {
   "name": "celar-backend",
   "version": "0.9.1",
-  "description": "",
-  "main": "index.mjs",
+  "description": "Celar Backend Service",
+  "main": "src/index.ts",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "run": "\"./node_modules/.bin/ts-node\" index.ts"
+    "run": "\"./node_modules/.bin/ts-node\" src/index.ts"
   },
   "repository": {
     "type": "git",
