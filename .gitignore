@@ -1,4 +1,6 @@
+# モジュールフォルダ
 node_modules
-package-lock.json
+
+# その他環境ファイル
 .env
 data.db
