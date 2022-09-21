@@ -4,8 +4,8 @@
   "description": "Celar Backend Service",
   "main": "src/index.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "run": "\"./node_modules/.bin/ts-node\" src/index.ts"
+    "run": "\"./node_modules/.bin/ts-node\" src/index.ts",
+    "maintenance": "\"./node_modules/.bin/ts-node\" src/maintenance.ts"
   },
   "repository": {
     "type": "git",
