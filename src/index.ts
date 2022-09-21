@@ -1,3 +1,4 @@
+// celar-team/celar-backend
 import express from 'express';
 import WebSocket, { WebSocketServer } from 'ws';
 import { config } from 'dotenv';
@@ -52,36 +53,23 @@ app.use(cors({ origin: true }));
 console.log("Application initialization complete.");
 
 export interface User {
-    uuid: number;
+    uid: number;
     icon: string;
-    friend: number[]; // friend uuids list
+    friend: number[]; // friend uids list
     friend_send: number[];
     friend_recv: number[];
     location: number[]; // [latitude, longitude, speed(m/s), time]
     password: string;
 }
 
-/// TODO: フレンドリクエスト
-/// ユーザーAがユーザーBにフレンドリクエストを送信したら、ユーザーAの「friend_send」（承認待機列）にユーザーBのIDが入る。
-/// そして、ユーザーBの「friend_recv」（受信待機列）にユーザーAのIDが入る。
-/// ユーザーBのクライアントは次回のINIT（構想中）で、受信待機列を受け取って、フレンド承認画面を表示する。
-/// 承認されたら各待機列からユーザーIDが削除されて、フレンドリストにそれぞれのユーザーIDが入る。
-/// 否認されたら各待機列からユーザーIDが削除されて終了。
-
 export interface SocketData {
     command: string; // コマンドを表したもの
-    uuid: number; // 自身のユーザーID
+    uid: number; // 自身のユーザーID
     password: string; // 自身のパスワード（hashed）
     user_id: number; // 対象のユーザーID
     location: number[]; // [latitude, longitude, speed(m/s), time]
     action: string; // FRIEND操作などで使われる
 }
-
-/// TODO: パスワード認証
-/// 各アクションにおいて、パスワードでの認証を行う。
-/// じゃないと大変なことになる。さてここで疑問が。hash値って本当に信用していいのか？
-/// それでは聞いてください。ハッシュ勉強しなおせ。
-/// 関数は「auth」として用意してるからそれ使え。
 
 let users: User[] = []
 
@@ -89,8 +77,8 @@ const cData = (action: string, content: any): string => {
     return JSON.stringify({ action: action, content: content });
 }
 
-const searchUser = (uuid: number): User | undefined => {
-    const user: User | undefined = users.find(item => item.uuid === uuid)
+const searchUser = (uid: number): User | undefined => {
+    const user: User | undefined = users.find(item => item.uid === uid)
     return user
 }
 
@@ -101,12 +89,17 @@ const hasFriend = (source: number, target: number): boolean => {
     return (result !== undefined);
 }
 
-const auth = (uuid: number, password: string): boolean => {
-    if (users[uuid] !== null && users[uuid].password === password) {
-        return true;
+const auth = (data: SocketData) => {
+    if (!("uid" in data) || !("password" in data)) {
+        throw "BadRequest";
+    }
+    const uid = data.uid;
+    const password = data.password;
+    if (users[uid] !== null && users[uid].password === password) {
+        return;
     }
     else {
-        return false
+        throw "Forbidden";
     }
 }
 
@@ -127,76 +120,144 @@ wss.on('connection', function connection(ws: WebSocket) {
     ws.on('message', function incoming(message: WebSocket.RawData) {
         const message_content = message.toString()
         try {
-            const mes: SocketData = JSON.parse(message_content)
+            const mes: SocketData = JSON.parse(message_content);
             console.info(mes);
+
             if (mes.command == "GET") {
+                auth(mes);
                 const user = users[mes.user_id];
-                if ((user === undefined) || (!hasFriend(mes.uuid, user?.uuid))) {
-                    ws.send(cData("ERR", "User not found."));
-                }
-                else {
-                    ws.send(cData("GET", users[user.uuid].location));
+                if (user === undefined) {
+                    ws.send(cData("ERR", "UserNotFound"));
+                } else if (!hasFriend(mes.uid, user?.uid)) {
+                    ws.send(cData("ERR", "NotAccessable"));
+                } else {
+                    ws.send(cData("GET", users[user.uid].location));
                 }
             }
+
             else if (mes.command == "POST") {
-                users[mes.uuid].location = mes.location
+                auth(mes)
+                users[mes.uid].location = mes.location
                 datawrite();
                 ws.send(cData("OK", "POST"));
             }
+
             else if (mes.command == "REGISTER") {
                 const regi_data = register(Object.keys(users), mes.password);
                 Object.assign(users, regi_data[1]);
                 datawrite();
-                ws.send(cData("REGISTER", { uuid: regi_data[0], password: mes.password }));
+                ws.send(cData("REGISTER", { uid: regi_data[0], password: mes.password }));
             }
+
             else if (mes.command == "FRIEND") {
+                auth(mes)
+
                 if (mes.action == "ADD") {
-                    users[mes.uuid].friend.push(Number(mes.user_id));
+                    users[mes.uid].friend_send.push(Number(mes.user_id));
+                    users[mes.user_id].friend_recv.push(Number(mes.uid));
                     datawrite();
                     ws.send(cData("OK", "FRIEND_ADD"));
                 }
+
                 else if (mes.action == "DEL") {
-                    const friend = users[mes.uuid].friend.filter(item => item !== mes.user_id);
-                    users[mes.uuid].friend = friend;
-                    datawrite();
-                    ws.send(cData("OK", "DEL_FRIEND"));
+                    if (users[mes.user_id] === null || users[mes.user_id] === undefined) {
+                        ws.send(cData("ERR", "UserNotFound"));
+                    }
+                    else {
+                        users[mes.uid].friend = users[mes.uid].friend.filter(item => item !== mes.user_id);
+                        users[mes.user_id].friend = users[mes.user_id].friend.filter(item => item !== mes.uid);
+                        datawrite();
+                        ws.send(cData("OK", "DEL_FRIEND"));
+                    }
                 }
+
                 else if (mes.action == "GET") {
-                    ws.send(cData("FRIENDS", users[mes.uuid].friend));
+                    ws.send(cData("FRIENDS", users[mes.uid].friend));
                 }
+
+                else if (mes.action == "ALLOW") {
+                    const user = users[mes.uid]
+                    if (user.friend_recv.find(uid => uid === mes.user_id) !== undefined) {
+                        users[mes.uid].friend_recv = user.friend_recv.filter(item => item !== mes.user_id)
+                        users[mes.uid].friend.push(mes.user_id);
+                        users[mes.user_id].friend_send = users[mes.user_id].friend_send.filter(item => item !== mes.uid)
+                        users[mes.user_id].friend.push(mes.uid);
+                        ws.send(cData("OK", "FRIEND_ALLOW"));
+                    }
+                    else
+                    {
+                        ws.send(cData("ERR", "RequestNotFound"));
+                    }
+                }
+
+                else if (mes.action == "DENY") {
+                    const user = users[mes.uid]
+                    if (user.friend_recv.find(uid => uid === mes.user_id) !== undefined) {
+                        users[mes.uid].friend_recv = user.friend_recv.filter(item => item !== mes.user_id)
+                        users[mes.user_id].friend_send = users[mes.user_id].friend_send.filter(item => item !== mes.uid)
+                        ws.send(cData("OK", "FRIEND_DENY"));
+                    }
+                    else
+                    {
+                        ws.send(cData("ERR", "RequestNotFound"));
+                    }
+                }
+
                 else {
-                    ws.send(cData("ERR", "Unknown command argument."));
+                    ws.send(cData("ERR", "UnknownArgument"));
                 }
             }
+
             else if (mes.command == "FETCH") {
-                let locations: { [uuid: string]: number[] } = {};
-                for (const uuid of users[mes.uuid].friend) {
-                    const user = users[uuid];
+                auth(mes)
+                let locations: { [uid: string]: number[] } = {};
+                for (const uid of users[mes.uid].friend) {
+                    const user = users[uid];
                     if (user === undefined) { continue; }
-                    locations[String(uuid)] = user.location;
+                    locations[String(uid)] = user.location;
                 }
                 ws.send(cData("FETCH", locations));
             }
+
             else if (mes.command == "INIT") {
-                const user = users[mes.uuid];
-                const friend_data: { icon: string, uuid: number, location: number[] }[] = [{ icon: user.icon, uuid: user.uuid, location: user.location }];
+                auth(mes)
+                const user = users[mes.uid];
+                const friend_data: { icon: string, uid: number, location: number[] }[] = [{ icon: user.icon, uid: user.uid, location: user.location }];
                 for (const u of user.friend) {
-                    friend_data.push({ icon: users[u].icon, uuid: u, location: users[u].location });
+                    friend_data.push({ icon: users[u].icon, uid: u, location: users[u].location });
                 }
-                ws.send(cData("INIT", { user: user, friends: friend_data }));
+                const requests: {icon: string, uid: number}[] = [];
+                for (const r of user.friend_recv) {
+                    requests.push({ icon: users[r].icon, uid: r });
+                }
+                ws.send(cData("INIT", { user: user, friends: friend_data, requests: requests }));
             }
+
             else if (mes.command == "CHECK") {
                 console.info(users.filter(item => item !== null));
+                console.info(wss.clients);
                 ws.send(cData("OK", "CHECK"));
             }
+
             else {
                 console.info(mes)
                 ws.send(cData("RECEIVE_JSON", mes));
             }
         }
         catch (e) {
-            ws.send(cData("RECEIVE_TXT", { content: message, event: e }));
-            console.log(e);
+            if (e === "BadRequst")
+            {
+                ws.send(cData("ERR", "BadRequest"));
+            }
+            else if (e === "Forbidden")
+            {
+                ws.send(cData("ERR", "Forbidden"));
+            }
+            else
+            {
+                ws.send(cData("RECEIVE_TXT", { content: message, event: e }));
+                console.log(e);
+            }
         }
     });
     ws.send(cData("CONNECTION_ACCEPT", "CONNECTION"));
@@ -204,7 +265,7 @@ wss.on('connection', function connection(ws: WebSocket) {
 
 app.get('/', function (req, res) {
     res.header("Content-Type", "application/json;charset=utf-8");
-    res.status(200).send(JSON.stringify({ http_port: HTTPPort, ws_port: WebSocketPort }));
+    res.status(200).send(JSON.stringify({ title: "Celar Backend Service", repository: "celar-team/celar-backend", status: "Normal" }));
 });
 
 app.get('/upload_icon', (req, res) => {
@@ -218,21 +279,20 @@ app.post('/upload_icon', upload.single('iconfile'), (req, res) => {
         res.status(400).send(JSON.stringify({ status: "Failed", exception: "File not found" }));
         return;
     }
-    else if (req.body.uuid === undefined || users[req.body.uuid] === null) {
+    else if (req.body.uid === undefined || users[req.body.uid] === null) {
         res.status(400).send(JSON.stringify({ status: "Failed", exception: "UUID not found" }));
         return
     }
     const filename = `/image/${Date.now()}-${generateUuid()}-${req.file.originalname}`;
     fsp.writeFile(path.join(String(process.env.FRONTEND_PATH), filename), req.file.buffer);
-    console.log(users[req.body.uuid].icon, path.join(String(process.env.FRONTEND_PATH), filename));
-    console.log(users[req.body.uuid].icon !== "/image/default.png", fs.existsSync(path.join(String(process.env.FRONTEND_PATH), users[req.body.uuid].icon)));
-    if (users[req.body.uuid].icon !== "/image/default.png" && fs.existsSync(path.join(String(process.env.FRONTEND_PATH), users[req.body.uuid].icon))) {
-        fsp.unlink(path.join(String(process.env.FRONTEND_PATH), users[req.body.uuid].icon));
+    /// console.log(users[req.body.uid].icon, path.join(String(process.env.FRONTEND_PATH), filename));
+    /// console.log(users[req.body.uid].icon !== "/image/default.png", fs.existsSync(path.join(String(process.env.FRONTEND_PATH), users[req.body.uid].icon)));
+    if (users[req.body.uid].icon !== "/image/default.png" && fs.existsSync(path.join(String(process.env.FRONTEND_PATH), users[req.body.uid].icon))) {
+        fsp.unlink(path.join(String(process.env.FRONTEND_PATH), users[req.body.uid].icon));
     }
-    users[req.body.uuid].icon = filename;
+    users[req.body.uid].icon = filename;
     res.status(200).send(JSON.stringify({ "Status": "Success", "FileName": filename }));
-})
-
+});
 
 console.log("Reading database...");
 dataread();
