@@ -308,6 +308,11 @@ app.post('/upload_icon', upload.single('iconfile'), (req, res) => {
     res.status(200).send(JSON.stringify({ "Status": "Success", "FileName": filename }));
 });
 
+app.get('/teapod', function (req, res) {
+    res.header("Content-Type", "application/json;charset=utf-8");
+    res.status(418).send(JSON.stringify({ title: "Celar Teapod Edition", description: "Teapod does not allow coffee." }));
+});
+
 console.log("Reading database...");
 dataread();
 console.info(users.filter(item => item !== null));

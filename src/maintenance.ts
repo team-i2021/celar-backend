@@ -19,7 +19,7 @@ wss.on('connection', function connection(ws: WebSocket) {
 
 app.get('/', function (req, res) {
     res.header("Content-Type", "application/json;charset=utf-8");
-    res.status(418).send(JSON.stringify({ title: "Celar Backend Service", repository: "celar-team/celar-backend", status: "Maintenance", teapod: "CoffeeNotAllowed" }));
+    res.status(503).send(JSON.stringify({ title: "Celar Backend Service", repository: "celar-team/celar-backend", status: "Maintenance" }));
 });
 
 console.log('Server starting...');
