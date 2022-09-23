@@ -12,7 +12,6 @@ import { generateUuid } from "./random";
 
 config();
 
-
 const FILE_NAME = "data.db"; // DBを使うまでの...
 
 console.log('Celar Backend Service')
@@ -72,6 +71,7 @@ export interface SocketData {
 }
 
 let users: User[] = []
+let clients: {[uid: number]: WebSocket.WebSocket} = {};
 
 const cData = (action: string, content: any): string => {
     return JSON.stringify({ action: action, content: content });
@@ -125,7 +125,7 @@ wss.on('connection', function connection(ws: WebSocket) {
         const message_content = message.toString()
         try {
             const mes: SocketData = JSON.parse(message_content);
-            console.info(mes);
+            console.log(mes);
 
             if (mes.command == "GET") {
                 auth(mes);
@@ -159,6 +159,9 @@ wss.on('connection', function connection(ws: WebSocket) {
                 if (mes.action == "ADD") {
                     users[mes.uid].friend_send.push(Number(mes.user_id));
                     users[mes.user_id].friend_recv.push(Number(mes.uid));
+                    if (mes.user_id in clients) {
+                        clients[mes.user_id].send(cData("FRIEND_REQUEST", { uid: mes.uid, icon: users[mes.uid].icon }))
+                    }
                     datawrite();
                     ws.send(cData("OK", "FRIEND_ADD"));
                 }
@@ -186,6 +189,9 @@ wss.on('connection', function connection(ws: WebSocket) {
                         users[mes.uid].friend.push(mes.user_id);
                         users[mes.user_id].friend_send = users[mes.user_id].friend_send.filter(item => item !== mes.uid)
                         users[mes.user_id].friend.push(mes.uid);
+                        if (mes.user_id in clients) {
+                            clients[mes.user_id].send(cData("FRIEND_ALLOWED", {uid: mes.uid}))
+                        }
                         ws.send(cData("OK", "FRIEND_ALLOW"));
                     }
                     else
@@ -225,6 +231,10 @@ wss.on('connection', function connection(ws: WebSocket) {
 
             else if (mes.command == "INIT") {
                 auth(mes)
+                if (mes.uid in clients) {
+                    clients[mes.uid].send(cData("CLOSE", "CloseBecauseNewConnection"));
+                }
+                clients[mes.uid] = ws;
                 const user = users[mes.uid];
                 const friend_data: { icon: string, uid: number, location: number[] }[] = [{ icon: user.icon, uid: user.uid, location: user.location }];
                 for (const u of user.friend) {
