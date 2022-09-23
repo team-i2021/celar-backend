@@ -95,7 +95,11 @@ const auth = (data: SocketData) => {
     }
     const uid = data.uid;
     const password = data.password;
-    if (users[uid] !== null && users[uid].password === password) {
+    if (users[uid] === undefined)
+    {
+        throw "Forbidden";
+    }
+    else if (users[uid] !== undefined && users[uid].password === password) {
         return;
     }
     else {
