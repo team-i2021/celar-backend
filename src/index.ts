@@ -11,7 +11,7 @@ import { register } from "./account";
 
 config();
 
-const FILE_NAME = "data.db"; // DBを使うまでの...
+const FILE_NAME = "data.json"; // DBを使うまでの...
 
 console.log('Celar Backend Service')
 
@@ -51,37 +51,38 @@ app.use(cors({ origin: true }));
 console.log("Application initialization complete.");
 
 export interface User {
-    uid: number;
+    uid: string;
     icon: string;
-    friend: number[]; // friend uids list
-    friend_send: number[];
-    friend_recv: number[];
+    username: string;
+    friend: string[]; // friend uids list
+    friend_send: string[];
+    friend_recv: string[];
     location: number[]; // [latitude, longitude, speed(m/s), time]
     password: string;
 }
 
 export interface SocketData {
     command: string; // コマンドを表したもの
-    uid: number; // 自身のユーザーID
+    uid: string; // 自身のユーザーID
     password: string; // 自身のパスワード（hashed）
-    user_id: number; // 対象のユーザーID
+    user_id: string; // 対象のユーザーID
     location: number[]; // [latitude, longitude, speed(m/s), time]
     action: string; // FRIEND操作などで使われる
 }
 
-let users: User[] = []
-let clients: {[uid: number]: WebSocket.WebSocket} = {};
+let users: {[uid: string]: User} = {}
+let clients: {[uid: string]: WebSocket.WebSocket} = {};
 
 const cData = (action: string, content: any): string => {
     return JSON.stringify({ action: action, content: content });
 }
 
-const searchUser = (uid: number): User | undefined => {
-    const user: User | undefined = users.find(item => item.uid === uid)
-    return user
-}
+// const searchUser = (uid: number): User | undefined => {
+//     const user: User | undefined = users[uid]
+//     return user
+// }
 
-const hasFriend = (source: number, target: number): boolean => {
+const hasFriend = (source: string, target: string): boolean => {
     const user = users[source]
     if (user === undefined) { return false; }
     const result = user.friend.find(item => item === target);
@@ -119,6 +120,19 @@ const datawrite = async () => {
     await fsp.writeFile(FILE_NAME, JSON.stringify(users));
 }
 
+const clientsReset = () => {
+    const temp_clients = clients;
+    for (const c in temp_clients)
+    {
+        const client = clients[c];
+        if (client.readyState === 3) {
+            delete clients[c];
+        }
+    }
+}
+
+setTimeout(clientsReset, 30000);
+
 wss.on('connection', function connection(ws: WebSocket) {
     ws.on('message', function incoming(message: WebSocket.RawData) {
         const message_content = message.toString()
@@ -146,8 +160,8 @@ wss.on('connection', function connection(ws: WebSocket) {
             }
 
             else if (mes.command == "REGISTER") {
-                const regi_data = register(Object.keys(users), mes.password);
-                Object.assign(users, regi_data[1]);
+                const regi_data = register(users, mes.password);
+                users[regi_data[0]] = regi_data[1];
                 datawrite();
                 ws.send(cData("REGISTER", { uid: regi_data[0], password: mes.password }));
             }
@@ -156,8 +170,8 @@ wss.on('connection', function connection(ws: WebSocket) {
                 auth(mes)
 
                 if (mes.action == "ADD") {
-                    users[mes.uid].friend_send.push(Number(mes.user_id));
-                    users[mes.user_id].friend_recv.push(Number(mes.uid));
+                    users[mes.uid].friend_send.push(mes.user_id);
+                    users[mes.user_id].friend_recv.push(mes.uid);
                     if (mes.user_id in clients) {
                         clients[mes.user_id].send(cData("FRIEND_REQUEST", { uid: mes.uid, icon: users[mes.uid].icon }))
                     }
@@ -235,11 +249,11 @@ wss.on('connection', function connection(ws: WebSocket) {
                 }
                 clients[mes.uid] = ws;
                 const user = users[mes.uid];
-                const friend_data: { icon: string, uid: number, location: number[] }[] = [{ icon: user.icon, uid: user.uid, location: user.location }];
+                const friend_data: { icon: string, uid: string, location: number[] }[] = [{ icon: user.icon, uid: user.uid, location: user.location }];
                 for (const u of user.friend) {
                     friend_data.push({ icon: users[u].icon, uid: u, location: users[u].location });
                 }
-                const requests: {icon: string, uid: number}[] = [];
+                const requests: {icon: string, uid: string}[] = [];
                 for (const r of user.friend_recv) {
                     requests.push({ icon: users[r].icon, uid: r });
                 }
@@ -247,8 +261,8 @@ wss.on('connection', function connection(ws: WebSocket) {
             }
 
             else if (mes.command == "CHECK") {
-                console.info(users.filter(item => item !== null));
-                console.info(wss.clients);
+                console.info(users);
+                console.info(clients);
                 ws.send(cData("OK", "CHECK"));
             }
 
@@ -314,7 +328,7 @@ app.get('/teapod', function (req, res) {
 
 console.log("Reading database...");
 dataread();
-console.info(users.filter(item => item !== null));
+console.info(users);
 console.log("Finished reading database.");
 
 console.log('Server starting...');

@@ -4,3 +4,4 @@ node_modules
 # その他環境ファイル
 .env
 data.db
+data.json
