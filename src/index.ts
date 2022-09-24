@@ -8,7 +8,6 @@ import path from "path";
 import cors from "cors";
 
 import { register } from "./account";
-import { generateUuid } from "./random";
 
 config();
 
@@ -297,7 +296,7 @@ app.post('/upload_icon', upload.single('iconfile'), (req, res) => {
         res.status(400).send(JSON.stringify({ status: "Failed", exception: "UUID not found" }));
         return
     }
-    const filename = `/image/${Date.now()}-${generateUuid()}-${req.file.originalname}`;
+    const filename = `/image/${Date.now()}-${crypto.randomUUID()}-${req.file.originalname}`;
     fsp.writeFile(path.join(String(process.env.FRONTEND_PATH), filename), req.file.buffer);
     /// console.log(users[req.body.uid].icon, path.join(String(process.env.FRONTEND_PATH), filename));
     /// console.log(users[req.body.uid].icon !== "/image/default.png", fs.existsSync(path.join(String(process.env.FRONTEND_PATH), users[req.body.uid].icon)));
