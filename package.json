@@ -4,7 +4,7 @@
   "description": "Celar Backend Service",
   "main": "src/index.ts",
   "scripts": {
-    "run": "\"./node_modules/.bin/ts-node\" src/index.ts",
+    "serve": "\"./node_modules/.bin/ts-node\" src/index.ts",
     "maintenance": "\"./node_modules/.bin/ts-node\" src/maintenance.ts"
   },
   "repository": {
