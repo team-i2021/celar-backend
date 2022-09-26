@@ -1,6 +1,9 @@
 # モジュールフォルダ
 node_modules
 
+# ビルド済みフォルダ
+build
+
 # その他環境ファイル
 .env
 data.db

@@ -2,10 +2,12 @@
   "name": "celar-backend",
   "version": "0.9.1",
   "description": "Celar Backend Service",
-  "main": "src/index.ts",
+  "main": "build/index.js",
   "scripts": {
-    "serve": "\"./node_modules/.bin/ts-node\" src/index.ts",
-    "maintenance": "\"./node_modules/.bin/ts-node\" src/maintenance.ts"
+    "build": "npx tsc",
+    "serve": "node build/index.js",
+    "start": "\"./node_modules/.bin/ts-node\" src/index.ts",
+    "maintenance": "\"./node_modules/.bin/ts-node\" src/index.ts"
   },
   "repository": {
     "type": "git",

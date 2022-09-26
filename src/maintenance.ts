@@ -5,6 +5,7 @@ import { config } from 'dotenv';
 config();
 
 console.log('Celar Backend Service - Maintenance Mode')
+alert('Backend');
 
 const WebSocketPort = Number(process.env.WSPORT);
 const HTTPPort = Number(process.env.HTTPPORT);

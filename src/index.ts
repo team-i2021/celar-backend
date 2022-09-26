@@ -6,8 +6,9 @@ import fs, { promises as fsp } from 'fs';
 import multer from "multer";
 import path from "path";
 import cors from "cors";
+import { randomUUID } from "crypto";
 
-import { register } from "./account";
+import { register, duplicate } from "./account";
 
 config();
 
@@ -65,13 +66,14 @@ export interface SocketData {
     command: string; // コマンドを表したもの
     uid: string; // 自身のユーザーID
     password: string; // 自身のパスワード（hashed）
-    user_id: string; // 対象のユーザーID
+    target_id: string; // 対象のユーザーID
+    username: string;
     location: number[]; // [latitude, longitude, speed(m/s), time]
     action: string; // FRIEND操作などで使われる
 }
 
-let users: {[uid: string]: User} = {}
-let clients: {[uid: string]: WebSocket.WebSocket} = {};
+let users: {[id: string]: User} = {}
+let clients: {[id: string]: WebSocket.WebSocket} = {};
 
 const cData = (action: string, content: any): string => {
     return JSON.stringify({ action: action, content: content });
@@ -131,7 +133,13 @@ const clientsReset = () => {
     }
 }
 
-setTimeout(clientsReset, 30000);
+const clientClose = (uid: string) => {
+    return function(e: WebSocket.CloseEvent) {
+        delete clients[uid];
+    }
+}
+
+// setTimeout(clientsReset, 1000);
 
 wss.on('connection', function connection(ws: WebSocket) {
     ws.on('message', function incoming(message: WebSocket.RawData) {
@@ -142,10 +150,10 @@ wss.on('connection', function connection(ws: WebSocket) {
 
             if (mes.command == "GET") {
                 auth(mes);
-                const user = users[mes.user_id];
+                const user = users[mes.target_id];
                 if (user === undefined) {
                     ws.send(cData("ERR", "UserNotFound"));
-                } else if (!hasFriend(mes.uid, user?.uid)) {
+                } else if (!hasFriend(mes.uid, user.uid)) {
                     ws.send(cData("ERR", "NotAccessable"));
                 } else {
                     ws.send(cData("GET", users[user.uid].location));
@@ -160,32 +168,39 @@ wss.on('connection', function connection(ws: WebSocket) {
             }
 
             else if (mes.command == "REGISTER") {
-                const regi_data = register(users, mes.password);
-                users[regi_data[0]] = regi_data[1];
-                datawrite();
-                ws.send(cData("REGISTER", { uid: regi_data[0], password: mes.password }));
+                if (duplicate(users, mes.uid))
+                {
+                    ws.send(cData("ERR", "RegisterDuplicate"));
+                }
+                else
+                {
+                    const regi_data = register(users, mes.uid, mes.password);
+                    users[regi_data[0]] = regi_data[1];
+                    datawrite();
+                    ws.send(cData("REGISTER", { uid: regi_data[0], password: mes.password }));
+                }
             }
 
             else if (mes.command == "FRIEND") {
                 auth(mes)
-
                 if (mes.action == "ADD") {
-                    users[mes.uid].friend_send.push(mes.user_id);
-                    users[mes.user_id].friend_recv.push(mes.uid);
-                    if (mes.user_id in clients) {
-                        clients[mes.user_id].send(cData("FRIEND_REQUEST", { uid: mes.uid, icon: users[mes.uid].icon }))
+                    console.log(users[mes.uid], users[mes.target_id]);
+                    users[mes.uid].friend_send.push(mes.target_id);
+                    users[mes.target_id].friend_recv.push(mes.uid);
+                    if (mes.target_id in clients) {
+                        clients[mes.target_id].send(cData("FRIEND_REQUEST", { uid: mes.uid, icon: users[mes.uid].icon }))
                     }
                     datawrite();
                     ws.send(cData("OK", "FRIEND_ADD"));
                 }
 
                 else if (mes.action == "DEL") {
-                    if (users[mes.user_id] === null || users[mes.user_id] === undefined) {
+                    if (users[mes.target_id] === null || users[mes.target_id] === undefined) {
                         ws.send(cData("ERR", "UserNotFound"));
                     }
                     else {
-                        users[mes.uid].friend = users[mes.uid].friend.filter(item => item !== mes.user_id);
-                        users[mes.user_id].friend = users[mes.user_id].friend.filter(item => item !== mes.uid);
+                        users[mes.uid].friend = users[mes.uid].friend.filter(item => item !== mes.target_id);
+                        users[mes.target_id].friend = users[mes.target_id].friend.filter(item => item !== mes.uid);
                         datawrite();
                         ws.send(cData("OK", "DEL_FRIEND"));
                     }
@@ -197,13 +212,13 @@ wss.on('connection', function connection(ws: WebSocket) {
 
                 else if (mes.action == "ALLOW") {
                     const user = users[mes.uid]
-                    if (user.friend_recv.find(uid => uid === mes.user_id) !== undefined) {
-                        users[mes.uid].friend_recv = user.friend_recv.filter(item => item !== mes.user_id)
-                        users[mes.uid].friend.push(mes.user_id);
-                        users[mes.user_id].friend_send = users[mes.user_id].friend_send.filter(item => item !== mes.uid)
-                        users[mes.user_id].friend.push(mes.uid);
-                        if (mes.user_id in clients) {
-                            clients[mes.user_id].send(cData("FRIEND_ALLOWED", {uid: mes.uid}))
+                    if (user.friend_recv.find(uid => uid === mes.target_id) !== undefined) {
+                        users[mes.uid].friend_recv = user.friend_recv.filter(item => item !== mes.target_id)
+                        users[mes.uid].friend.push(mes.target_id);
+                        users[mes.target_id].friend_send = users[mes.target_id].friend_send.filter(item => item !== mes.uid)
+                        users[mes.target_id].friend.push(mes.uid);
+                        if (mes.target_id in clients) {
+                            clients[mes.target_id].send(cData("FRIEND_ALLOWED", {uid: mes.uid}))
                         }
                         ws.send(cData("OK", "FRIEND_ALLOW"));
                     }
@@ -215,9 +230,9 @@ wss.on('connection', function connection(ws: WebSocket) {
 
                 else if (mes.action == "DENY") {
                     const user = users[mes.uid]
-                    if (user.friend_recv.find(uid => uid === mes.user_id) !== undefined) {
-                        users[mes.uid].friend_recv = user.friend_recv.filter(item => item !== mes.user_id)
-                        users[mes.user_id].friend_send = users[mes.user_id].friend_send.filter(item => item !== mes.uid)
+                    if (user.friend_recv.find(uid => uid === mes.target_id) !== undefined) {
+                        users[mes.uid].friend_recv = user.friend_recv.filter(item => item !== mes.target_id)
+                        users[mes.target_id].friend_send = users[mes.target_id].friend_send.filter(item => item !== mes.uid)
                         ws.send(cData("OK", "FRIEND_DENY"));
                     }
                     else
@@ -248,6 +263,10 @@ wss.on('connection', function connection(ws: WebSocket) {
                     clients[mes.uid].send(cData("CLOSE", "CloseBecauseNewConnection"));
                 }
                 clients[mes.uid] = ws;
+                clients[mes.uid].on(
+                    "close",
+                    clientClose(mes.uid)
+                );
                 const user = users[mes.uid];
                 const friend_data: { icon: string, uid: string, location: number[] }[] = [{ icon: user.icon, uid: user.uid, location: user.location }];
                 for (const u of user.friend) {
@@ -258,6 +277,18 @@ wss.on('connection', function connection(ws: WebSocket) {
                     requests.push({ icon: users[r].icon, uid: r });
                 }
                 ws.send(cData("INIT", { user: user, friends: friend_data, requests: requests }));
+            }
+
+            else if (mes.command == "SETTING") {
+                auth(mes);
+                if (mes.action == "CHANGE_NAME") {
+                    users[mes.uid].username = mes.username;
+                    ws.send(cData("OK", "CHANGE_NAME"));
+                    datawrite();
+                }
+                else {
+                    ws.send(cData("OK", "CHANGE_NAME"));
+                }
             }
 
             else if (mes.command == "CHECK") {
@@ -306,11 +337,16 @@ app.post('/upload_icon', upload.single('iconfile'), (req, res) => {
         res.status(400).send(JSON.stringify({ status: "Failed", exception: "File not found" }));
         return;
     }
-    else if (req.body.uid === undefined || users[req.body.uid] === null) {
+    if (req.body.uid === undefined || !(req.body.uid in users)) {
         res.status(400).send(JSON.stringify({ status: "Failed", exception: "UUID not found" }));
         return
     }
-    const filename = `/image/${Date.now()}-${crypto.randomUUID()}-${req.file.originalname}`;
+    console.log([req.body.password, users[req.body.uid].password, users[req.body.uid].password != req.body.password]);
+    if (req.body.password === undefined || users[req.body.uid].password !== req.body.password) {
+        res.status(400).send(JSON.stringify({ status: "Failed", exception: "Authentication failed" }));
+        return
+    }
+    const filename = `/image/${Date.now()}-${randomUUID()}-${encodeURI(req.file.originalname)}`;
     fsp.writeFile(path.join(String(process.env.FRONTEND_PATH), filename), req.file.buffer);
     /// console.log(users[req.body.uid].icon, path.join(String(process.env.FRONTEND_PATH), filename));
     /// console.log(users[req.body.uid].icon !== "/image/default.png", fs.existsSync(path.join(String(process.env.FRONTEND_PATH), users[req.body.uid].icon)));
