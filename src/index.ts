@@ -68,12 +68,13 @@ export interface SocketData {
     password: string; // 自身のパスワード（hashed）
     target_id: string; // 対象のユーザーID
     username: string;
+    uuid: string; // セッション登録用のUUID
     location: number[]; // [latitude, longitude, speed(m/s), time]
     action: string; // FRIEND操作などで使われる
 }
 
 let users: {[id: string]: User} = {}
-let clients: {[id: string]: WebSocket.WebSocket} = {};
+let clients: {[id: string]: {client: WebSocket.WebSocket, uuid: string} } = {};
 
 const cData = (action: string, content: any): string => {
     return JSON.stringify({ action: action, content: content });
@@ -126,7 +127,7 @@ const clientsReset = () => {
     const temp_clients = clients;
     for (const c in temp_clients)
     {
-        const client = clients[c];
+        const client = clients[c].client;
         if (client.readyState === 3) {
             delete clients[c];
         }
@@ -188,7 +189,7 @@ wss.on('connection', function connection(ws: WebSocket) {
                     users[mes.uid].friend_send.push(mes.target_id);
                     users[mes.target_id].friend_recv.push(mes.uid);
                     if (mes.target_id in clients) {
-                        clients[mes.target_id].send(cData("FRIEND_REQUEST", { uid: mes.uid, icon: users[mes.uid].icon }))
+                        clients[mes.target_id].client.send(cData("FRIEND_REQUEST", { uid: mes.uid, icon: users[mes.uid].icon }))
                     }
                     datawrite();
                     ws.send(cData("OK", "FRIEND_ADD"));
@@ -218,7 +219,7 @@ wss.on('connection', function connection(ws: WebSocket) {
                         users[mes.target_id].friend_send = users[mes.target_id].friend_send.filter(item => item !== mes.uid)
                         users[mes.target_id].friend.push(mes.uid);
                         if (mes.target_id in clients) {
-                            clients[mes.target_id].send(cData("FRIEND_ALLOWED", {uid: mes.uid}))
+                            clients[mes.target_id].client.send(cData("FRIEND_ALLOWED", {uid: mes.uid}))
                         }
                         ws.send(cData("OK", "FRIEND_ALLOW"));
                     }
@@ -260,10 +261,13 @@ wss.on('connection', function connection(ws: WebSocket) {
             else if (mes.command == "INIT") {
                 auth(mes)
                 if (mes.uid in clients) {
-                    clients[mes.uid].send(cData("CLOSE", "CloseBecauseNewConnection"));
+                console.log(mes.uid in clients, mes.uuid, clients[mes.uid].uuid)
+                    if (mes.uuid !== clients[mes.uid].uuid) {
+                        clients[mes.uid].client.send(cData("CLOSE", "CloseBecauseNewConnection"));
+                    }
                 }
-                clients[mes.uid] = ws;
-                clients[mes.uid].on(
+                clients[mes.uid] = {client: ws, uuid: mes.uuid};
+                clients[mes.uid].client.on(
                     "close",
                     clientClose(mes.uid)
                 );
