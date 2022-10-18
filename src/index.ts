@@ -297,6 +297,11 @@ wss.on('connection', function connection(ws: WebSocket) {
                 ws.send(cData("OK", "CHECK"));
             }
 
+            else if (mes.command == "PING") {
+                const date = new Date();
+                ws.send(cData("PING", date.getTime()));
+            }
+
             else {
                 console.info(mes)
                 ws.send(cData("RECEIVE_JSON", mes));
